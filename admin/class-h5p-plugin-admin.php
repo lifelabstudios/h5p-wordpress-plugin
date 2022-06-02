@@ -117,11 +117,11 @@ class H5P_Plugin_Admin {
     // AJAX for restricting library access
     add_action('wp_ajax_h5p_restrict_library', array($this->library, 'ajax_restrict_access'));
 
+    // AJAX for creating an h5p content
+    add_action('wp_ajax_create_h5p_content', array($this, 'ajax_create_content'));
+
     // Display admin notices
     add_action('admin_notices', array($this, 'admin_notices'));
-
-    //Spawn h5p
-    add_action('wp_ajax_create_h5p', array($this, 'spawn_h5p'));
 
     // Embed
     add_action('wp_ajax_h5p_embed', array($this, 'embed'));
@@ -162,74 +162,80 @@ class H5P_Plugin_Admin {
   /**
    * Spawn an h5p content via POST request
    */
-  public function spawn_h5p() {
+  public function ajax_create_content() {
+    // Load plugin and core instances
     $plugin = H5P_Plugin::get_instance();
+    $core = $plugin->get_h5p_instance('core'); 
     $action = $_REQUEST['action'];
-    if ($action) {
-      $core = $plugin->get_h5p_instance('core'); // Make sure core is loaded
-      if ($action === 'create_h5p') {
-        // Handle creation of new h5p content.
-        $json = file_get_contents('php://input');
 
-        $decoded = json_decode($json);
-        if(!isset($decoded->library) || !isset($decoded->params)){
-          $core->h5pF->setErrorMessage(__('Invalid POST parameters set', $this->plugin_slug));
-          return;
-        }
+    if(!isset($action)) {
+      $core->h5pF->setErrorMessage(__('No action set', $this->plugin_slug));
+      return;
+    }
+    
+    if(strcmp($action, 'create_h5p_content') !== 0) {
+      $core->h5pF->setErrorMessage(__('Invalid action set', $this->plugin_slug));
+      return;
+    }
 
-        // Construct an h5p content array with POST params
-        $content['library'] = $decoded->library;
-        $content['params'] = $decoded->params;
+    // Handle creation of new h5p content.
+    $json = file_get_contents('php://input');
+    $decoded = json_decode($json);
 
-        $content['library'] = $core->libraryFromString($content['library']);
+    if(!isset($decoded->library) || !isset($decoded->h5pContentParameters)){
+      $core->h5pF->setErrorMessage(__('Invalid POST parameters set', $this->plugin_slug));
+      return;
+    }
 
-        if (!isset($content['library'])) {
-          $core->h5pF->setErrorMessage(__('Invalid library.', $this->plugin_slug));
-          return;
-        }
+    // Construct an h5p content array with POST params
+    $content['library'] = $core->libraryFromString($decoded->library);
+    $h5pContentParams = $decoded->h5pContentParameters;
+    
+    if (!isset($content['library'])) {
+      $core->h5pF->setErrorMessage(__('Invalid library.', $this->plugin_slug));
+      return;
+    }
 
-        $content['library']['libraryId'] = $core->h5pF->getLibraryId($content['library']['machineName'], $content['library']['majorVersion'], $content['library']['minorVersion']);
-        if (!isset($content['library']['libraryId'])) {
-          $core->h5pF->setErrorMessage(__('No such library.', $this->plugin_slug));
-          return;
-        }
+    $content['library']['libraryId'] = $core->h5pF->getLibraryId($content['library']['machineName'], $content['library']['majorVersion'], $content['library']['minorVersion']);
+    if (!isset($content['library']['libraryId'])) {
+      $core->h5pF->setErrorMessage(__('No such library.', $this->plugin_slug));
+      return;
+    }
 
-        if (!isset($content['params'])) {
-          $core->h5pF->setErrorMessage(__('No parameters set.', $this->plugin_slug));
-          return;
-        }
+    if (!isset($h5pContentParams)) {
+      $core->h5pF->setErrorMessage(__('No parameters set.', $this->plugin_slug));
+      return;
+    }
 
-        $content['params'] = json_encode($decoded->params->params);
-        $content['metadata'] = $decoded->params->metadata;
-        $content['disable'] = 0;
+    $content['params'] = json_encode($decoded->h5pContentParameters->params);
+    $content['metadata'] = $decoded->h5pContentParameters->metadata;
+    $content['disable'] = 0;
 
-        try {
-          // Save new content
-          $content['id'] = $core->saveContent($content);
-          $editor = $this->content->get_h5peditor_instance();
-          // Process a nested h5p content
-          $editor->processParameters($content['id'], $content['library'], $decoded->params->params, NULL, NULL);
-        }
-        catch (Exception $e) {
-          set_error($e->getMessage());
-          return;
-        }
-      }
+    try {
+      // Save new content
+      $content['id'] = $core->saveContent($content);
+      $editor = $this->content->get_h5peditor_instance();
+      // Process a nested h5p content
+      $editor->processParameters($content['id'], $content['library'], $decoded->h5pContentParameters->params, NULL, NULL);
+    }
+    catch (Exception $e) {
+      set_error($e->getMessage());
+      return;
+    }
 
-      if (isset($content['id'])) {
-        // Return newly created h5p id
-        $returnObject = array(
-          'id' => $content['id'],
-          'message' => 'h5p created'
-        );
+    if (isset($content['id'])) {
+      // Return newly created h5p id
+      $returnObject = array(
+        'id' => $content['id'],
+        'message' => 'h5p created'
+      );
 
-        wp_send_json($returnObject);
-        return;
+      wp_send_json($returnObject);
+      return;
 
-      }
+    }
 
-      exit;
-  }
+    return;
 }
 
   /**
