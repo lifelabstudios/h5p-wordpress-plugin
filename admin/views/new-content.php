@@ -65,7 +65,7 @@
           <h2><?php esc_html_e('Display Options', $this->plugin_slug); ?></h2>
           <div class="h5p-action-bar-settings h5p-panel">
             <label>
-              <input name="frame" type="checkbox" class="h5p-visibility-toggler" data-h5p-visibility-subject-selector=".h5p-action-bar-buttons-settings" value="true"<?php if ($display_options[H5PCore::DISPLAY_OPTION_FRAME]): ?><?php endif; ?>/>
+              <input name="frame" type="checkbox" class="h5p-visibility-toggler" data-h5p-visibility-subject-selector=".h5p-action-bar-buttons-settings" value="true"<?php if ($display_options[H5PCore::DISPLAY_OPTION_FRAME]): ?> checked="checked"<?php endif; ?>/>
               <?php _e("Display toolbar below content", $this->plugin_slug); ?>
             </label>
             <?php if (isset($display_options[H5PCore::DISPLAY_OPTION_DOWNLOAD]) || isset($display_options[H5PCore::DISPLAY_OPTION_EMBED]) || isset($display_options[H5PCore::DISPLAY_OPTION_COPYRIGHT])) : ?>
