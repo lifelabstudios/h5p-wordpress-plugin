@@ -960,7 +960,7 @@ class H5PContentAdmin {
    * @since 1.1.0
    * @return \H5peditor
    */
-  private function get_h5peditor_instance() {
+  public function get_h5peditor_instance() {
     if (self::$h5peditor === null) {
       $upload_dir = wp_upload_dir();
       $plugin = H5P_Plugin::get_instance();
