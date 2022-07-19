@@ -629,7 +629,7 @@ class H5PContentAdmin {
    * @param int $current
    * @return int
    */
-  private function get_disabled_content_features($core, &$content) {
+  public function get_disabled_content_features($core, &$content) {
     $set = array(
       H5PCore::DISPLAY_OPTION_FRAME => filter_input(INPUT_POST, 'frame', FILTER_VALIDATE_BOOLEAN),
       H5PCore::DISPLAY_OPTION_DOWNLOAD => filter_input(INPUT_POST, 'download', FILTER_VALIDATE_BOOLEAN),
