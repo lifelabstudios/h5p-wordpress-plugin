@@ -169,7 +169,6 @@ class H5P_Plugin_Admin {
     $core = $plugin->get_h5p_instance('core');
     $action = $_GET['action'];
     $content_id = $_GET['content_id'];
-    
 
     if(!isset($action)) {
       $core->h5pF->setErrorMessage(__('No action set', $this->plugin_slug));
@@ -192,17 +191,20 @@ class H5P_Plugin_Admin {
     try{
       $save_data = $wpdb->get_var($wpdb->prepare(
         "SELECT `data`
-        FROM {$wpdb->prefix}h5p_contents_user_data
-        WHERE user_id = %d
-        AND content_id = %d",
+        FROM `{$wpdb->prefix}h5p_contents_user_data`
+        WHERE `user_id` = %d
+        AND `content_id` = %d",
         $user_id,
         $content_id
       ));
 
-      wp_send_json($save_data);
+      $decoded = json_decode($save_data);
+      header('Content-Type: application/json; charset=utf-8');
+      wp_send_json($decoded);
     }
     catch(Exception $ex) {
       error_log("Error Message: " . $ex->getMessage());
+      http_response_code(500);
       return;
     }
 
