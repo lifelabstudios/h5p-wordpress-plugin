@@ -120,6 +120,9 @@ class H5P_Plugin_Admin {
     // AJAX for creating an h5p content
     add_action('wp_ajax_create_h5p_content', array($this, 'ajax_create_content'));
 
+    // AJAX for pulling h5p save data for specific user and content
+    add_action('wp_ajax_get_content_save_data', array($this, 'ajax_get_user_h5p_save_data'));
+
     // Display admin notices
     add_action('admin_notices', array($this, 'admin_notices'));
 
@@ -157,6 +160,56 @@ class H5P_Plugin_Admin {
   function add_settings_link($links) {
     $links[] = '<a href="' . admin_url('options-general.php?page=h5p_settings') . '">Settings</a>';
     return $links;
+  }
+
+
+  public function ajax_get_user_h5p_save_data() {
+    global $wpdb;
+    $plugin = H5P_Plugin::get_instance();
+    $core = $plugin->get_h5p_instance('core');
+    $action = $_GET['action'];
+    $content_id = $_GET['content_id'];
+
+    if(!isset($action)) {
+      $core->h5pF->setErrorMessage(__('No action set', $this->plugin_slug));
+      return;
+    }
+    
+    if(strcmp($action, 'get_content_save_data') !== 0) {
+      $core->h5pF->setErrorMessage(__('Invalid action set', $this->plugin_slug));
+      return;
+    }
+
+    $user_id = get_current_user_id();
+
+    if(!isset($user_id) || !is_numeric($user_id))
+    {
+        error_log("Could not retrieve current user");
+        return;
+    }
+
+    try{
+      $save_data = $wpdb->get_var($wpdb->prepare(
+        "SELECT `data`
+        FROM `{$wpdb->prefix}h5p_contents_user_data`
+        WHERE `user_id` = %d
+        AND `content_id` = %d",
+        $user_id,
+        $content_id
+      ));
+
+      $decoded = json_decode($save_data);
+      header('Content-Type: application/json; charset=utf-8');
+      wp_send_json($decoded);
+    }
+    catch(Exception $ex) {
+      error_log("Error Message: " . $ex->getMessage());
+      http_response_code(500);
+      return;
+    }
+
+    return;
+
   }
 
   /**
@@ -215,6 +268,7 @@ class H5P_Plugin_Admin {
       // Save new content
       $content['id'] = $core->saveContent($content);
       $editor = $this->content->get_h5peditor_instance();
+      $this->content->get_disabled_content_features($core, $content);
       // Process a nested h5p content
       $editor->processParameters($content['id'], $content['library'], $decoded->h5pContentParameters->params, NULL, NULL);
     }
