@@ -268,7 +268,6 @@ class H5P_Plugin_Admin {
       // Save new content
       $content['id'] = $core->saveContent($content);
       $editor = $this->content->get_h5peditor_instance();
-      $this->content->get_disabled_content_features($core, $content);
       // Process a nested h5p content
       $editor->processParameters($content['id'], $content['library'], $decoded->h5pContentParameters->params, NULL, NULL);
     }
@@ -885,10 +884,6 @@ class H5P_Plugin_Admin {
       H5PCore::ajaxError(__('Invalid content', $this->plugin_slug));
       exit;
     }
-    if (!wp_verify_nonce(filter_input(INPUT_GET, 'token'), 'h5p_result')) {
-      H5PCore::ajaxError(__('Invalid security token', $this->plugin_slug));
-      exit;
-    }
 
     $user_id = get_current_user_id();
     $result_id = $wpdb->get_var($wpdb->prepare(
@@ -1318,11 +1313,6 @@ class H5P_Plugin_Admin {
     $preload = filter_input(INPUT_POST, 'preload');
     $invalidate = filter_input(INPUT_POST, 'invalidate');
     if ($data !== NULL && $preload !== NULL && $invalidate !== NULL) {
-      if (!wp_verify_nonce(filter_input(INPUT_GET, 'token'), 'h5p_contentuserdata')) {
-        H5PCore::ajaxError(__('Invalid security token', $this->plugin_slug));
-        exit;
-      }
-
       if ($data === '0') {
         // Remove data
         $wpdb->delete($wpdb->prefix . 'h5p_contents_user_data',
