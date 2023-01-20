@@ -123,6 +123,9 @@ class H5P_Plugin_Admin {
     // AJAX for pulling h5p save data for specific user and content
     add_action('wp_ajax_get_content_save_data', array($this, 'ajax_get_user_h5p_save_data'));
 
+    // AJAX for mapping h5p save data between an array of content ID's and Journey user ID's
+    add_action('wp_ajax_get_users_data_by_content', array($this, 'ajax_get_users_h5p_report_data'));
+
     // Display admin notices
     add_action('admin_notices', array($this, 'admin_notices'));
 
@@ -160,6 +163,78 @@ class H5P_Plugin_Admin {
   function add_settings_link($links) {
     $links[] = '<a href="' . admin_url('options-general.php?page=h5p_settings') . '">Settings</a>';
     return $links;
+  }
+
+  /**
+  * Retrieve a JSON representation of H5P save data for multiple users and contents, via GET request
+  *
+  */
+  public function ajax_get_users_h5p_report_data() {
+    global $wpdb;
+    $plugin = H5P_Plugin::get_instance();
+    $core = $plugin->get_h5p_instance('core');
+    $action = $_GET['action'];
+
+    if(!isset($action) || strcmp($action, 'get_users_data_by_content') !== 0) {
+      $core->h5pF->setErrorMessage(__('Invalid action set, or no action set at all', $this->plugin_slug));
+      return;
+    }
+    
+    $json = file_get_contents('php://input');
+    $decoded = json_decode($json);
+    $response = array();
+  
+    try
+    {
+      foreach ($decoded->journey_user_ids as $journey_user_id) {
+        $response[$journey_user_id] = array();
+
+        // Get WordPress user ID corresponding to journey user ID
+        $wp_user_id = $wpdb->get_var($wpdb->prepare(
+          "SELECT id FROM wp_users 
+           WHERE user_login = CONCAT('tcuser', %d)",
+           $journey_user_id
+        ));
+        
+        foreach ($decoded->content_ids as $content_id) {
+          // Get user data from h5p_contents_user_data table by content ID and user ID
+          $user_data = json_decode($wpdb->get_var($wpdb->prepare(
+            "SELECT `data` FROM `{$wpdb->prefix}h5p_contents_user_data`
+             WHERE `user_id` = %d AND `content_id` = %d",
+             $wp_user_id,
+             $content_id
+          )));
+
+          $h5p_results_row = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM `{$wpdb->prefix}h5p_results`
+             WHERE `user_id` = %d AND `content_id` = %d",
+             $wp_user_id,
+             $content_id
+          ));
+
+          // Calculate start and finish time, as well as overall time to completion
+          if(!is_null($h5p_results_row)) {
+            $user_data->start_time = date("Y-m-d H:i:s", (int)$h5p_results_row->opened);
+            $user_data->finished_time = date("Y-m-d H:i:s", (int)$h5p_results_row->finished);
+            $interval = (new DateTimeImmutable($user_data->start_time))->diff(new DateTimeImmutable($user_data->finished_time));
+            $user_data->total_time_spent = $interval->format('%Hh %im %ss');
+          }
+          
+          $response[$journey_user_id]["h5p_id_" . $content_id] = $user_data;
+        }
+      }
+
+      header('Content-Type: application/json; charset=utf-8');
+      wp_send_json($response);
+    }
+    catch(Exception $ex) {
+      error_log("Error Message in ajax_get_users_report_data: " . $ex->getMessage());
+      http_response_code(500);
+      return;
+    }
+
+    return;
+    
   }
 
 
