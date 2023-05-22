@@ -324,6 +324,7 @@ class H5PContentAdmin {
    * @since 1.1.0
    */
   public function process_new_content($echo_on_success) {
+    global $wpdb;
     $plugin = H5P_Plugin::get_instance();
 
     $consent = filter_input(INPUT_POST, 'consent', FILTER_VALIDATE_BOOLEAN);
@@ -344,7 +345,33 @@ class H5PContentAdmin {
       }
     }
 
-    if ($this->content !== NULL) {
+    // Check for lifelabs column map submission
+    if ($this->content !== null && filter_input(INPUT_POST, 'lifelabs-column-map-only', FILTER_VALIDATE_BOOLEAN) === true) {
+      // Get form data
+      $columnValueRemaps = filter_input(INPUT_POST, 'h5p-column-name-remap');
+      $rowValueRemaps = filter_input(INPUT_POST, 'h5p-row-value-remap');
+      
+
+      // Updates the h5p_contents table with a "map" or "codebook", set by a user for that specific h5p being edited. 
+      // These "maps" are used to rename columns and row-values during the report generation, i.e changing 'some_column_questions_0_answers_0' to 'Question One'
+      $update_columns_data = $wpdb->query($wpdb->prepare(
+          "UPDATE`{$wpdb->prefix}h5p_contents`
+            SET `journey_user_data_column_map` = %s
+            WHERE `id` = %d",
+            $columnValueRemaps,
+            $id ));
+
+      $update_rows_data = $wpdb->query($wpdb->prepare(
+          "UPDATE`{$wpdb->prefix}h5p_contents`
+            SET `journey_user_data_row_value_map` = %s
+            WHERE `id` = %d",
+            $rowValueRemaps,
+            $id));
+
+      wp_safe_redirect(admin_url('admin.php?page=h5p&task=show&id=' . $id));
+      return;
+
+    } else if ($this->content !== NULL) {
       // We have existing content
 
       if (!$this->current_user_can_edit($this->content)) {

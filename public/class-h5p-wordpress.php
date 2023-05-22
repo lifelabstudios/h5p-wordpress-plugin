@@ -683,6 +683,8 @@ class H5PWordPress implements H5PFrameworkInterface {
               , hc.title
               , hc.parameters AS params
               , hc.filtered
+              , hc.journey_user_data_column_map
+              , hc.journey_user_data_row_value_map
               , hc.slug AS slug
               , hc.user_id
               , hc.embed_type AS embedType
