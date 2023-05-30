@@ -126,6 +126,9 @@ class H5P_Plugin_Admin {
     // AJAX for mapping h5p save data between an array of content ID's and Journey user ID's
     add_action('wp_ajax_get_users_data_by_content', array($this, 'ajax_get_users_h5p_report_data'));
 
+    // Get Reports remaps
+    add_action('wp_ajax_get_h5p_report_column_data_maps', array($this, 'ajax_get_h5p_data_report_column_row_remaps'));
+
     // Display admin notices
     add_action('admin_notices', array($this, 'admin_notices'));
 
@@ -164,6 +167,58 @@ class H5P_Plugin_Admin {
     $links[] = '<a href="' . admin_url('options-general.php?page=h5p_settings') . '">Settings</a>';
     return $links;
   }
+
+  /** 
+ * Retrieve a JSON representation of any available column/row-value remaps per content id
+ */
+public function ajax_get_h5p_data_report_column_row_remaps()  {
+    global $wpdb;
+    $plugin = H5P_Plugin::get_instance();
+    $core = $plugin->get_h5p_instance('core');
+    $action = $_GET['action'];
+    if (!isset($action) || strcmp($action, 'get_h5p_report_column_data_maps') !== 0) {
+        $core->h5pF->setErrorMessage(__('Invalid action set, or no action set at all', $this->plugin_slug));
+        return;
+    } 
+
+    $json = file_get_contents('php://input');
+    $decoded = json_decode($json);
+    $response = array();
+
+    try {
+      foreach($decoded->content_ids as $content_id) {
+        $response[$content_id] = array();
+        $column_remap = $wpdb->get_var($wpdb->prepare(
+            "SELECT `journey_user_data_column_map` 
+            FROM `{$wpdb->prefix}h5p_contents`
+            WHERE `id` = %d", 
+            $content_id
+        ));
+
+        $row_value_remap = $wpdb->get_var($wpdb->prepare(
+            "SELECT `journey_user_data_row_value_map`
+            FROM `{$wpdb->prefix}h5p_contents`
+            WHERE `id` = %d", 
+            $content_id
+        ));
+
+        error_log($column_remap);
+
+        $response[$content_id]['column_remap'] = json_decode($column_remap);
+        $response[$content_id]['row_value_remap'] = json_decode($row_value_remap);
+      }
+
+      header('Content-Type: application/json; charset=utf-8');
+      wp_send_json($response);
+    }
+    catch(Exception $ex) {
+      error_log("Error Message in ajax_get_h5p_data_report_column_row_remaps: " . $ex->getMessage());
+      http_response_code(500);
+      return;
+    }
+
+    return;
+    }
 
   /**
   * Retrieve a JSON representation of H5P save data for multiple users and contents, via GET request
@@ -220,7 +275,7 @@ class H5P_Plugin_Admin {
             $user_data->total_time_spent = $interval->format('%Hh %im %ss');
           }
           
-          $response[$journey_user_id]["h5p_id_" . $content_id] = $user_data;
+          $response[$journey_user_id][$content_id] = $user_data;
         }
       }
 

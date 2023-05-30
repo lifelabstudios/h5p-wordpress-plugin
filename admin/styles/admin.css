@@ -19,6 +19,12 @@
   padding-top: 10px;
   margin-right: 300px;
 }
+
+#h5p-data-report-settings-form {
+  padding-top: 10px;
+  margin-right: 300px;
+}
+
 .h5p-sidebar {
   float: right;
   width: 280px;
@@ -80,6 +86,11 @@
 .h5p-sidebar .h5p-tags {
   width: 100%;
 }
+
+.h5p-column-name-remap .h5p-row-value-remap {
+  width: 100%
+}
+
 #h5p-content-form #minor-publishing,
 .h5p-sidebar .h5p-panel {
   line-height: 175%;
@@ -270,6 +281,11 @@
   .h5p-wp-admin-wrapper {
     margin-right: 0;
   }
+
+  #h5p-data-report-settings-form {
+    margin-right: 0;
+  }
+
   .h5p-sidebar {
     width: 100%;
     margin-right: 0;
