@@ -225,72 +225,152 @@ public function ajax_get_h5p_data_report_column_row_remaps()  {
   *
   */
   public function ajax_get_users_h5p_report_data() {
-    global $wpdb;
-    $plugin = H5P_Plugin::get_instance();
-    $core = $plugin->get_h5p_instance('core');
-    $action = $_GET['action'];
+  global $wpdb;
+  $plugin = H5P_Plugin::get_instance();
+  $core = $plugin->get_h5p_instance('core');
+  
+  $action = $_GET['action'] ?? null;
+  if ($action !== 'get_users_data_by_content') {
+    $core->h5pF->setErrorMessage(__('Invalid action set, or no action set at all', $this->plugin_slug));
+    return;
+  }
 
-    if(!isset($action) || strcmp($action, 'get_users_data_by_content') !== 0) {
-      $core->h5pF->setErrorMessage(__('Invalid action set, or no action set at all', $this->plugin_slug));
-      return;
+  $json = file_get_contents('php://input');
+  $decoded = json_decode($json);
+  
+  if (empty($decoded->journey_user_ids) || empty($decoded->content_ids)) {
+    wp_send_json([]);
+    return;
+  }
+
+  try {
+    $journey_user_ids = array_map('intval', $decoded->journey_user_ids);
+    $content_ids = array_map('intval', $decoded->content_ids);
+
+    // Batch fetch all WP user IDs
+    $login_placeholders = implode(',', array_fill(0, count($journey_user_ids), "CONCAT('tcuser', %d)"));
+    $user_query = $wpdb->prepare(
+      "SELECT id, user_login FROM {$wpdb->users} WHERE user_login IN ($login_placeholders)",
+      ...$journey_user_ids
+    );
+    $wp_users = $wpdb->get_results($user_query);
+    
+    $journey_to_wp = [];
+    foreach ($wp_users as $user) {
+      $journey_id = (int) str_replace('tcuser', '', $user->user_login);
+      $journey_to_wp[$journey_id] = (int) $user->id;
     }
     
-    $json = file_get_contents('php://input');
-    $decoded = json_decode($json);
-    $response = array();
-  
-    try
-    {
-      foreach ($decoded->journey_user_ids as $journey_user_id) {
-        $response[$journey_user_id] = array();
+    $wp_user_ids = array_values($journey_to_wp);
+    
+    if (empty($wp_user_ids)) {
+      wp_send_json([]);
+      return;
+    }
 
-        // Get WordPress user ID corresponding to journey user ID
-        $wp_user_id = $wpdb->get_var($wpdb->prepare(
-          "SELECT id FROM wp_users 
-           WHERE user_login = CONCAT('tcuser', %d)",
-           $journey_user_id
-        ));
-        
-        foreach ($decoded->content_ids as $content_id) {
-          // Get user data from h5p_contents_user_data table by content ID and user ID
-          $user_data = json_decode($wpdb->get_var($wpdb->prepare(
-            "SELECT `data` FROM `{$wpdb->prefix}h5p_contents_user_data`
-             WHERE `user_id` = %d AND `content_id` = %d",
-             $wp_user_id,
-             $content_id
-          )));
+    // Fetch results data (small rows, safe to keep in memory)
+    $user_placeholders = implode(',', array_fill(0, count($wp_user_ids), '%d'));
+    $content_placeholders = implode(',', array_fill(0, count($content_ids), '%d'));
+    
+    $results_query = $wpdb->prepare(
+      "SELECT user_id, content_id, opened, finished 
+       FROM {$wpdb->prefix}h5p_results
+       WHERE user_id IN ($user_placeholders) AND content_id IN ($content_placeholders)",
+      ...array_merge($wp_user_ids, $content_ids)
+    );
+    $results_rows = $wpdb->get_results($results_query);
 
-          $h5p_results_row = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM `{$wpdb->prefix}h5p_results`
-             WHERE `user_id` = %d AND `content_id` = %d",
-             $wp_user_id,
-             $content_id
-          ));
+    $results_map = [];
+    foreach ($results_rows as $row) {
+      $results_map[$row->user_id][$row->content_id] = $row;
+    }
+    unset($results_rows); // Free memory
 
-          // Calculate start and finish time, as well as overall time to completion
-          if(!is_null($h5p_results_row)) {
-            $user_data->start_time = date("Y-m-d H:i:s", (int)$h5p_results_row->opened);
-            $user_data->finished_time = date("Y-m-d H:i:s", (int)$h5p_results_row->finished);
-            $interval = (new DateTimeImmutable($user_data->start_time))->diff(new DateTimeImmutable($user_data->finished_time));
-            $user_data->total_time_spent = $interval->format('%Hh %im %ss');
-          }
-          
-          $response[$journey_user_id][$content_id] = $user_data;
+    // Stream JSON response - never hold full response in memory
+    header('Content-Type: application/json; charset=utf-8');
+    echo '{';
+    
+    $first_user = true;
+    $chunk_size = 50; // Process users in chunks
+    $user_chunks = array_chunk($journey_user_ids, $chunk_size);
+    
+    foreach ($user_chunks as $chunk) {
+      // Get WP IDs for this chunk
+      $chunk_wp_ids = [];
+      $chunk_journey_to_wp = [];
+      foreach ($chunk as $journey_id) {
+        if (isset($journey_to_wp[$journey_id])) {
+          $wp_id = $journey_to_wp[$journey_id];
+          $chunk_wp_ids[] = $wp_id;
+          $chunk_journey_to_wp[$journey_id] = $wp_id;
         }
       }
-
-      header('Content-Type: application/json; charset=utf-8');
-      wp_send_json($response);
+      
+      if (empty($chunk_wp_ids)) {
+        // Still output empty objects for users not found
+        foreach ($chunk as $journey_id) {
+          echo ($first_user ? '' : ',') . json_encode((string)$journey_id) . ':{}';
+          $first_user = false;
+        }
+        continue;
+      }
+      
+      // Fetch user_data only for this chunk
+      $chunk_user_placeholders = implode(',', array_fill(0, count($chunk_wp_ids), '%d'));
+      $user_data_query = $wpdb->prepare(
+        "SELECT user_id, content_id, data 
+         FROM {$wpdb->prefix}h5p_contents_user_data
+         WHERE user_id IN ($chunk_user_placeholders) AND content_id IN ($content_placeholders)",
+        ...array_merge($chunk_wp_ids, $content_ids)
+      );
+      $user_data_rows = $wpdb->get_results($user_data_query);
+      
+      $user_data_map = [];
+      foreach ($user_data_rows as $row) {
+        $user_data_map[$row->user_id][$row->content_id] = json_decode($row->data);
+      }
+      unset($user_data_rows); // Free memory immediately
+      
+      // Output this chunk
+      foreach ($chunk as $journey_id) {
+        echo ($first_user ? '' : ',') . json_encode((string)$journey_id) . ':{';
+        $first_user = false;
+        
+        $wp_user_id = $chunk_journey_to_wp[$journey_id] ?? null;
+        $first_content = true;
+        
+        foreach ($content_ids as $content_id) {
+          echo ($first_content ? '' : ',') . json_encode((string)$content_id) . ':';
+          $first_content = false;
+          
+          $user_data = $user_data_map[$wp_user_id][$content_id] ?? new stdClass();
+          $h5p_result = $results_map[$wp_user_id][$content_id] ?? null;
+          
+          if ($h5p_result) {
+            $start = (int) $h5p_result->opened;
+            $finish = (int) $h5p_result->finished;
+            $user_data->start_time = date("Y-m-d H:i:s", $start);
+            $user_data->finished_time = date("Y-m-d H:i:s", $finish);
+            $user_data->total_time_spent = gmdate('H\h i\m s\s', $finish - $start);
+          }
+          
+          echo json_encode($user_data);
+        }
+        echo '}';
+      }
+      
+      unset($user_data_map); // Free chunk memory before next iteration
+      flush(); // Send output to client incrementally
     }
-    catch(Exception $ex) {
-      error_log("Error Message in ajax_get_users_report_data: " . $ex->getMessage());
-      http_response_code(500);
-      return;
-    }
-
-    return;
     
+    echo '}';
+    exit;
   }
+  catch (Exception $ex) {
+    error_log("Error in ajax_get_users_report_data: " . $ex->getMessage());
+    http_response_code(500);
+  }
+}
 
 
   public function ajax_get_user_h5p_save_data() {
